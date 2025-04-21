@@ -1,40 +1,35 @@
+// App.jsx
 import { useEffect, useRef, useState } from "react";
 import logo from "/assets/openai-logomark.svg";
-import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [events, setEvents] = useState([]);
   const [dataChannel, setDataChannel] = useState(null);
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [liveUserTranscript, setLiveUserTranscript] = useState("");
+  const [liveAssistantTranscript, setLiveAssistantTranscript] = useState("");
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
+  const currentResponseId = useRef(null);
 
   async function startSession() {
-    // Get a session token for OpenAI Realtime API
     const tokenResponse = await fetch("/token");
     const data = await tokenResponse.json();
     const EPHEMERAL_KEY = data.client_secret.value;
 
-    // Create a peer connection
     const pc = new RTCPeerConnection();
 
-    // Set up to play remote audio from the model
     audioElement.current = document.createElement("audio");
     audioElement.current.autoplay = true;
     pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
 
-    // Add local audio track for microphone input in the browser
-    const ms = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
+    const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
     pc.addTrack(ms.getTracks()[0]);
 
-    // Set up data channel for sending and receiving events
     const dc = pc.createDataChannel("oai-events");
     setDataChannel(dc);
 
-    // Start the session using the Session Description Protocol (SDP)
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
@@ -58,64 +53,138 @@ export default function App() {
     peerConnection.current = pc;
   }
 
-  // Stop current session, clean up peer connection and data channel
   function stopSession() {
-    if (dataChannel) {
-      dataChannel.close();
-    }
+    if (dataChannel) dataChannel.close();
 
     peerConnection.current.getSenders().forEach((sender) => {
-      if (sender.track) {
-        sender.track.stop();
-      }
+      if (sender.track) sender.track.stop();
     });
 
-    if (peerConnection.current) {
-      peerConnection.current.close();
-    }
+    if (peerConnection.current) peerConnection.current.close();
 
     setIsSessionActive(false);
     setDataChannel(null);
     peerConnection.current = null;
   }
 
-  // Send a message to the model
   function sendClientEvent(message) {
     if (dataChannel) {
       const timestamp = new Date().toLocaleTimeString();
       message.event_id = message.event_id || crypto.randomUUID();
       message.timestamp = timestamp;
-
-      // send event before setting timestamp since the backend peer doesn't expect this field
       dataChannel.send(JSON.stringify(message));
-      setEvents((prev) => [message, ...prev]);
+      console.log("Client Event:", message);
     } else {
-      console.error(
-        "Failed to send message - no data channel available",
-        message,
-      );
+      console.error("Failed to send message - no data channel available", message);
     }
   }
 
-  // Attach event listeners to the data channel when a new one is created
   useEffect(() => {
     if (dataChannel) {
-      // Append new server events to the list
       dataChannel.addEventListener("message", (e) => {
         const event = JSON.parse(e.data);
-        if (!event.timestamp) {
-          event.timestamp = new Date().toLocaleTimeString();
+        if (!event.timestamp) event.timestamp = new Date().toLocaleTimeString();
+
+        switch (event.type) {
+          case "conversation.item.input_audio_transcription.delta":
+            setLiveUserTranscript(prev => {
+              const newTranscript = prev + event.delta;
+              // Check for sentence endings (., ?, !)
+              if (event.delta.match(/[.!?]\s*$/)) {
+                // Add the completed sentence to conversation history
+                setConversationHistory(prev => [...prev, {
+                  role: "user",
+                  text: newTranscript.trim(),
+                  timestamp: event.timestamp,
+                  id: crypto.randomUUID()
+                }]);
+                // Reset the live transcript
+                return "";
+              }
+              return newTranscript;
+            });
+            break;
+
+          case "response.audio_transcript.delta":
+            // If this is a new response, start accumulating a new response
+            if (event.response_id !== currentResponseId.current) {
+              // If there was a previous response in progress, save it
+              if (liveAssistantTranscript.trim()) {
+                setConversationHistory(prev => [...prev, {
+                  role: "assistant",
+                  text: liveAssistantTranscript.trim(),
+                  timestamp: event.timestamp,
+                  id: currentResponseId.current || crypto.randomUUID()
+                }]);
+              }
+              currentResponseId.current = event.response_id;
+              setLiveAssistantTranscript(event.delta);
+            } else {
+              // Continue accumulating the current response
+              setLiveAssistantTranscript(prev => prev + event.delta);
+            }
+            break;
+
+          case "conversation.item.audio_transcription.completed":
+            if (liveUserTranscript.trim()) {
+              setConversationHistory(prev => [...prev, {
+                role: "user",
+                text: liveUserTranscript.trim(),
+                timestamp: event.timestamp,
+                id: crypto.randomUUID()
+              }]);
+              setLiveUserTranscript("");
+            }
+            break;
+
+          case "response.audio_transcript.completed":
+            if (liveAssistantTranscript.trim()) {
+              setConversationHistory(prev => [...prev, {
+                role: "assistant",
+                text: liveAssistantTranscript.trim(),
+                timestamp: event.timestamp,
+                id: currentResponseId.current || crypto.randomUUID()
+              }]);
+              setLiveAssistantTranscript("");
+              currentResponseId.current = null;
+            }
+            break;
+
+          default:
+            console.log("Server Event:", event);
         }
-        setEvents((prev) => [event, ...prev]);
       });
 
-      // Set session active when the data channel is opened
       dataChannel.addEventListener("open", () => {
         setIsSessionActive(true);
-        setEvents([]);
+        setLiveUserTranscript("");
+        setLiveAssistantTranscript("");
+        currentResponseId.current = null;
+        dataChannel.send(
+          JSON.stringify({
+            type: "session.update",
+            session: {
+              input_audio_transcription: { model: "whisper-1" },
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.4,
+                silence_duration_ms: 600,
+              },
+            },
+          })
+        );
       });
     }
   }, [dataChannel]);
+
+  // Auto-scroll to bottom when new messages arrive
+  const messagesEndRef = useRef(null);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+  useEffect(() => {
+    scrollToBottom();
+  }, [conversationHistory, liveUserTranscript, liveAssistantTranscript]);
 
   return (
     <>
@@ -128,7 +197,40 @@ export default function App() {
       <main className="absolute top-16 left-0 right-0 bottom-0">
         <section className="absolute top-0 left-0 right-0 bottom-0 flex">
           <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
-            <EventLog events={events} />
+            <div className="flex flex-col gap-4 p-4">
+              {conversationHistory.map((message) => (
+                <div 
+                  key={message.id}
+                  className={`p-4 rounded-lg ${
+                    message.role === "user" 
+                      ? "bg-green-900/20 border border-green-500" 
+                      : "bg-blue-900/20 border border-blue-500"
+                  }`}
+                >
+                  <div className="text-xs text-gray-400 mb-1">
+                    {message.role === "user" ? "You" : "Assistant"} • {message.timestamp}
+                  </div>
+                  <div className="text-green-500">{message.text}</div>
+                </div>
+              ))}
+              {liveUserTranscript && (
+                <div className="p-4 rounded-lg bg-green-900/20 border border-green-500">
+                  <div className="text-xs text-gray-400 mb-1">You • Live</div>
+                  <div className="text-green-500">
+                    {liveUserTranscript}<span className="animate-pulse">▋</span>
+                  </div>
+                </div>
+              )}
+              {liveAssistantTranscript && (
+                <div className="p-4 rounded-lg bg-blue-900/20 border border-blue-500">
+                  <div className="text-xs text-gray-400 mb-1">Assistant • Live</div>
+                  <div className="text-green-500">
+                    {liveAssistantTranscript}<span className="animate-pulse">▋</span>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
           </section>
           <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
             <SessionControls
