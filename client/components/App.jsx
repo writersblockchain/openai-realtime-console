@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import logo from "/assets/openai-logomark.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
-import ToolPanel from "./ToolPanel";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -85,14 +84,10 @@ export default function App() {
     if (dataChannel) {
       const timestamp = new Date().toLocaleTimeString();
       message.event_id = message.event_id || crypto.randomUUID();
+      message.timestamp = timestamp;
 
       // send event before setting timestamp since the backend peer doesn't expect this field
       dataChannel.send(JSON.stringify(message));
-
-      // if guard just in case the timestamp exists by miracle
-      if (!message.timestamp) {
-        message.timestamp = timestamp;
-      }
       setEvents((prev) => [message, ...prev]);
     } else {
       console.error(
@@ -100,26 +95,6 @@ export default function App() {
         message,
       );
     }
-  }
-
-  // Send a text message to the model
-  function sendTextMessage(message) {
-    const event = {
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: message,
-          },
-        ],
-      },
-    };
-
-    sendClientEvent(event);
-    sendClientEvent({ type: "response.create" });
   }
 
   // Attach event listeners to the data channel when a new one is created
@@ -131,7 +106,6 @@ export default function App() {
         if (!event.timestamp) {
           event.timestamp = new Date().toLocaleTimeString();
         }
-
         setEvents((prev) => [event, ...prev]);
       });
 
@@ -146,13 +120,13 @@ export default function App() {
   return (
     <>
       <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
-        <div className="flex items-center gap-4 w-full m-4 pb-2 border-0 border-b border-solid border-gray-200">
+        <div className="flex items-center gap-4 w-full m-4 pb-2 border-0 border-b border-solid border-green-500">
           <img style={{ width: "24px" }} src={logo} />
           <h1>realtime console</h1>
         </div>
       </nav>
       <main className="absolute top-16 left-0 right-0 bottom-0">
-        <section className="absolute top-0 left-0 right-[380px] bottom-0 flex">
+        <section className="absolute top-0 left-0 right-0 bottom-0 flex">
           <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
             <EventLog events={events} />
           </section>
@@ -160,20 +134,9 @@ export default function App() {
             <SessionControls
               startSession={startSession}
               stopSession={stopSession}
-              sendClientEvent={sendClientEvent}
-              sendTextMessage={sendTextMessage}
-              events={events}
               isSessionActive={isSessionActive}
             />
           </section>
-        </section>
-        <section className="absolute top-0 w-[380px] right-0 bottom-0 p-4 pt-0 overflow-y-auto">
-          <ToolPanel
-            sendClientEvent={sendClientEvent}
-            sendTextMessage={sendTextMessage}
-            events={events}
-            isSessionActive={isSessionActive}
-          />
         </section>
       </main>
     </>

@@ -7,23 +7,23 @@ function Event({ event, timestamp }) {
   const isClient = event.event_id && !event.event_id.startsWith("event_");
 
   return (
-    <div className="flex flex-col gap-2 p-2 rounded-md bg-gray-50">
+    <div className="flex flex-col gap-2 p-2 rounded-none border border-green-500 bg-black">
       <div
         className="flex items-center gap-2 cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         {isClient ? (
-          <ArrowDown className="text-blue-400" />
+          <ArrowDown className="text-green-500" />
         ) : (
-          <ArrowUp className="text-green-400" />
+          <ArrowUp className="text-green-500" />
         )}
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-green-500">
           {isClient ? "client:" : "server:"}
           &nbsp;{event.type} | {timestamp}
         </div>
       </div>
       <div
-        className={`text-gray-500 bg-gray-200 p-2 rounded-md overflow-x-auto ${
+        className={`text-green-500 bg-black p-2 border border-green-500 overflow-x-auto ${
           isExpanded ? "block" : "hidden"
         }`}
       >
@@ -55,7 +55,7 @@ export default function EventLog({ events }) {
   return (
     <div className="flex flex-col gap-2 overflow-x-auto">
       {events.length === 0 ? (
-        <div className="text-gray-500">Awaiting events...</div>
+        <div className="text-green-500">Awaiting events...</div>
       ) : (
         eventsToDisplay
       )}

@@ -10,3 +10,9 @@ To change the voice, modify the token generation in server.js.
 
 ***
 
+https://github.com/MicrosoftDocs/azure-ai-docs/blob/main/articles/ai-services/openai/realtime-audio-reference.md#realtimevoice
+
+***
+
+
+
