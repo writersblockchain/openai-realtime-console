@@ -220,24 +220,76 @@ export default function App() {
         <section className="absolute top-0 left-0 right-0 bottom-0 flex">
           <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
             <div className="flex flex-col gap-4 p-4">
-              {conversationHistory.map((message) => (
-                <div 
-                  key={message.id}
-                  className={`p-4 rounded-lg ${
-                    message.role === "user" 
-                      ? "bg-green-900/20 border border-green-500" 
-                      : "bg-blue-900/20 border border-blue-500"
-                  }`}
-                >
-                  <div className="text-xs text-gray-400 mb-1">
-                    {message.role === "user" ? "You" : "Assistant"} • {message.timestamp}
+              {/* Group conversationHistory into user/agent pairs */}
+              {(() => {
+                // Sort messages by timestamp
+                const sortedHistory = [...conversationHistory].sort((a, b) => {
+                  const dateA = new Date(`1970-01-01T${a.timestamp}`);
+                  const dateB = new Date(`1970-01-01T${b.timestamp}`);
+                  return dateA - dateB;
+                });
+                const turns = [];
+                for (const msg of sortedHistory) {
+                  const lastTurn = turns[turns.length - 1];
+                  if (!lastTurn) {
+                    // First message starts the first turn
+                    if (msg.role === "user") {
+                      turns.push({ userMsg: msg, agentMsg: null });
+                    } else {
+                      turns.push({ userMsg: null, agentMsg: msg });
+                    }
+                  } else {
+                    // If the last message in the last turn is the same role, skip
+                    if (
+                      (msg.role === "user" && lastTurn.userMsg && !lastTurn.agentMsg) ||
+                      (msg.role === "assistant" && lastTurn.agentMsg && !lastTurn.userMsg)
+                    ) {
+                      continue;
+                    }
+                    // If the turn is incomplete, fill it
+                    if (msg.role === "user" && !lastTurn.userMsg) {
+                      lastTurn.userMsg = msg;
+                    } else if (msg.role === "assistant" && !lastTurn.agentMsg) {
+                      lastTurn.agentMsg = msg;
+                    } else {
+                      // Otherwise, start a new turn
+                      if (msg.role === "user") {
+                        turns.push({ userMsg: msg, agentMsg: null });
+                      } else {
+                        turns.push({ userMsg: null, agentMsg: msg });
+                      }
+                    }
+                  }
+                }
+                return turns.map((turn, idx) => (
+                  <div key={idx} className="flex flex-col gap-2">
+                    {turn.userMsg && (
+                      <div
+                        className={
+                          "p-4 rounded-lg bg-green-900/20 border border-green-500"
+                        }
+                      >
+                        <div className="text-xs text-gray-400 mb-1">
+                          You • {turn.userMsg.timestamp}
+                        </div>
+                        <div className="text-green-500">{turn.userMsg.text}</div>
+                      </div>
+                    )}
+                    {turn.agentMsg && (
+                      <div
+                        className={
+                          "p-4 rounded-lg bg-blue-900/20 border border-blue-500"
+                        }
+                      >
+                        <div className="text-xs text-gray-400 mb-1">
+                          Assistant • {turn.agentMsg.timestamp}
+                        </div>
+                        <div className="text-green-500">{turn.agentMsg.text}</div>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-green-500">
-                    {message.text}
-                    {message.isLive && <span className="animate-pulse">▋</span>}
-                  </div>
-                </div>
-              ))}
+                ));
+              })()}
               <div ref={messagesEndRef} />
             </div>
           </section>
