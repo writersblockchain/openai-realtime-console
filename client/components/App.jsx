@@ -7,8 +7,6 @@ export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [dataChannel, setDataChannel] = useState(null);
   const [conversationHistory, setConversationHistory] = useState([]);
-  const [liveUserTranscript, setLiveUserTranscript] = useState("");
-  const [liveAssistantTranscript, setLiveAssistantTranscript] = useState("");
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
   const currentResponseId = useRef(null);
@@ -87,67 +85,94 @@ export default function App() {
 
         switch (event.type) {
           case "conversation.item.input_audio_transcription.delta":
-            setLiveUserTranscript(prev => {
-              const newTranscript = prev + event.delta;
-              // Check for sentence endings (., ?, !)
-              if (event.delta.match(/[.!?]\s*$/)) {
-                // Add the completed sentence to conversation history
-                setConversationHistory(prev => [...prev, {
-                  role: "user",
-                  text: newTranscript.trim(),
-                  timestamp: event.timestamp,
-                  id: crypto.randomUUID()
-                }]);
-                // Reset the live transcript
-                return "";
+            setConversationHistory(prev => {
+              const last = prev[prev.length - 1];
+              // If last message is a live user message, append delta
+              if (last && last.role === "user" && last.isLive) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, text: last.text + event.delta }
+                ];
+              } else {
+                // Otherwise, add a new live user message
+                return [
+                  ...prev,
+                  {
+                    role: "user",
+                    text: event.delta,
+                    timestamp: event.timestamp,
+                    id: crypto.randomUUID(),
+                    isLive: true
+                  }
+                ];
               }
-              return newTranscript;
             });
             break;
 
           case "response.audio_transcript.delta":
-            // If this is a new response, start accumulating a new response
-            if (event.response_id !== currentResponseId.current) {
-              // If there was a previous response in progress, save it
-              if (liveAssistantTranscript.trim()) {
-                setConversationHistory(prev => [...prev, {
-                  role: "assistant",
-                  text: liveAssistantTranscript.trim(),
-                  timestamp: event.timestamp,
-                  id: currentResponseId.current || crypto.randomUUID()
-                }]);
+            setConversationHistory(prev => {
+              // Find the most recent live assistant message with the same response_id
+              const idx = [...prev].reverse().findIndex(
+                msg => msg.role === "assistant" && msg.isLive && msg.response_id === event.response_id
+              );
+              if (idx !== -1) {
+                // idx is from the end, so convert to forward index
+                const realIdx = prev.length - 1 - idx;
+                const updated = [...prev];
+                updated[realIdx] = {
+                  ...updated[realIdx],
+                  text: updated[realIdx].text + event.delta
+                };
+                return updated;
               }
-              currentResponseId.current = event.response_id;
-              setLiveAssistantTranscript(event.delta);
-            } else {
-              // Continue accumulating the current response
-              setLiveAssistantTranscript(prev => prev + event.delta);
-            }
+              // Otherwise, add a new live assistant message
+              return [
+                ...prev,
+                {
+                  role: "assistant",
+                  text: event.delta,
+                  timestamp: event.timestamp,
+                  id: event.response_id || crypto.randomUUID(),
+                  isLive: true,
+                  response_id: event.response_id
+                }
+              ];
+            });
+            currentResponseId.current = event.response_id;
             break;
 
           case "conversation.item.audio_transcription.completed":
-            if (liveUserTranscript.trim()) {
-              setConversationHistory(prev => [...prev, {
-                role: "user",
-                text: liveUserTranscript.trim(),
-                timestamp: event.timestamp,
-                id: crypto.randomUUID()
-              }]);
-              setLiveUserTranscript("");
-            }
+            setConversationHistory(prev => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "user" && last.isLive) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, isLive: false, timestamp: event.timestamp }
+                ];
+              }
+              return prev;
+            });
             break;
 
           case "response.audio_transcript.completed":
-            if (liveAssistantTranscript.trim()) {
-              setConversationHistory(prev => [...prev, {
-                role: "assistant",
-                text: liveAssistantTranscript.trim(),
-                timestamp: event.timestamp,
-                id: currentResponseId.current || crypto.randomUUID()
-              }]);
-              setLiveAssistantTranscript("");
-              currentResponseId.current = null;
-            }
+            setConversationHistory(prev => {
+              // Find the most recent live assistant message with the same response_id
+              const idx = [...prev].reverse().findIndex(
+                msg => msg.role === "assistant" && msg.isLive && msg.response_id === event.response_id
+              );
+              if (idx !== -1) {
+                const realIdx = prev.length - 1 - idx;
+                const updated = [...prev];
+                updated[realIdx] = {
+                  ...updated[realIdx],
+                  isLive: false,
+                  timestamp: event.timestamp
+                };
+                return updated;
+              }
+              return prev;
+            });
+            currentResponseId.current = null;
             break;
 
           default:
@@ -157,9 +182,6 @@ export default function App() {
 
       dataChannel.addEventListener("open", () => {
         setIsSessionActive(true);
-        setLiveUserTranscript("");
-        setLiveAssistantTranscript("");
-        currentResponseId.current = null;
         dataChannel.send(
           JSON.stringify({
             type: "session.update",
@@ -184,7 +206,7 @@ export default function App() {
   };
   useEffect(() => {
     scrollToBottom();
-  }, [conversationHistory, liveUserTranscript, liveAssistantTranscript]);
+  }, [conversationHistory]);
 
   return (
     <>
@@ -210,25 +232,12 @@ export default function App() {
                   <div className="text-xs text-gray-400 mb-1">
                     {message.role === "user" ? "You" : "Assistant"} • {message.timestamp}
                   </div>
-                  <div className="text-green-500">{message.text}</div>
+                  <div className="text-green-500">
+                    {message.text}
+                    {message.isLive && <span className="animate-pulse">▋</span>}
+                  </div>
                 </div>
               ))}
-              {liveUserTranscript && (
-                <div className="p-4 rounded-lg bg-green-900/20 border border-green-500">
-                  <div className="text-xs text-gray-400 mb-1">You • Live</div>
-                  <div className="text-green-500">
-                    {liveUserTranscript}<span className="animate-pulse">▋</span>
-                  </div>
-                </div>
-              )}
-              {liveAssistantTranscript && (
-                <div className="p-4 rounded-lg bg-blue-900/20 border border-blue-500">
-                  <div className="text-xs text-gray-400 mb-1">Assistant • Live</div>
-                  <div className="text-green-500">
-                    {liveAssistantTranscript}<span className="animate-pulse">▋</span>
-                  </div>
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </div>
           </section>
