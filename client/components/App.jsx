@@ -217,83 +217,155 @@ export default function App() {
         </div>
       </nav>
       <main className="absolute top-16 left-0 right-0 bottom-0">
-        <section className="absolute top-0 left-0 right-0 bottom-0 flex">
-          <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
-            <div className="flex flex-col gap-4 p-4">
-              {/* Group conversationHistory into user/agent pairs */}
-              {(() => {
-                // Sort messages by timestamp
-                const sortedHistory = [...conversationHistory].sort((a, b) => {
-                  const dateA = new Date(`1970-01-01T${a.timestamp}`);
-                  const dateB = new Date(`1970-01-01T${b.timestamp}`);
-                  return dateA - dateB;
-                });
-                const turns = [];
-                for (const msg of sortedHistory) {
-                  const lastTurn = turns[turns.length - 1];
-                  if (!lastTurn) {
-                    // First message starts the first turn
-                    if (msg.role === "user") {
-                      turns.push({ userMsg: msg, agentMsg: null });
-                    } else {
-                      turns.push({ userMsg: null, agentMsg: msg });
-                    }
-                  } else {
-                    // If the last message in the last turn is the same role, skip
-                    if (
-                      (msg.role === "user" && lastTurn.userMsg && !lastTurn.agentMsg) ||
-                      (msg.role === "assistant" && lastTurn.agentMsg && !lastTurn.userMsg)
-                    ) {
-                      continue;
-                    }
-                    // If the turn is incomplete, fill it
-                    if (msg.role === "user" && !lastTurn.userMsg) {
-                      lastTurn.userMsg = msg;
-                    } else if (msg.role === "assistant" && !lastTurn.agentMsg) {
-                      lastTurn.agentMsg = msg;
-                    } else {
-                      // Otherwise, start a new turn
+        <section className="flex flex-col h-full w-full">
+          <div className="flex flex-row flex-1 h-full w-full">
+            {/* OpenAI Non-Confidential Column */}
+            <div className="w-1/2 h-full border-r border-green-500 bg-black/90 flex flex-col">
+              <div className="p-4 border-b border-green-500">
+                <h2 className="text-green-400 text-lg font-bold tracking-widest">OpenAI (Non-Confidential)</h2>
+                <p className="text-xs text-green-700 mt-1">Your data is visible and stored on centralized servers.</p>
+              </div>
+              <div className="flex flex-col gap-4 p-4 overflow-y-auto flex-1">
+                {(() => {
+                  // Sort messages by timestamp
+                  const sortedHistory = [...conversationHistory].sort((a, b) => {
+                    const dateA = new Date(`1970-01-01T${a.timestamp}`);
+                    const dateB = new Date(`1970-01-01T${b.timestamp}`);
+                    return dateA - dateB;
+                  });
+                  const turns = [];
+                  for (const msg of sortedHistory) {
+                    const lastTurn = turns[turns.length - 1];
+                    if (!lastTurn) {
                       if (msg.role === "user") {
                         turns.push({ userMsg: msg, agentMsg: null });
                       } else {
                         turns.push({ userMsg: null, agentMsg: msg });
                       }
+                    } else {
+                      if (
+                        (msg.role === "user" && lastTurn.userMsg && !lastTurn.agentMsg) ||
+                        (msg.role === "assistant" && lastTurn.agentMsg && !lastTurn.userMsg)
+                      ) {
+                        continue;
+                      }
+                      if (msg.role === "user" && !lastTurn.userMsg) {
+                        lastTurn.userMsg = msg;
+                      } else if (msg.role === "assistant" && !lastTurn.agentMsg) {
+                        lastTurn.agentMsg = msg;
+                      } else {
+                        if (msg.role === "user") {
+                          turns.push({ userMsg: msg, agentMsg: null });
+                        } else {
+                          turns.push({ userMsg: null, agentMsg: msg });
+                        }
+                      }
                     }
                   }
-                }
-                return turns.map((turn, idx) => (
-                  <div key={idx} className="flex flex-col gap-2">
-                    {turn.userMsg && (
-                      <div
-                        className={
-                          "p-4 rounded-lg bg-green-900/20 border border-green-500"
-                        }
-                      >
-                        <div className="text-xs text-gray-400 mb-1">
-                          You • {turn.userMsg.timestamp}
+                  return turns.map((turn, idx) => (
+                    <div key={idx} className="flex flex-col gap-2">
+                      {turn.userMsg && (
+                        <div className={"p-4 rounded-lg bg-green-900/20 border border-green-500"}>
+                          <div className="text-xs text-gray-400 mb-1">
+                            You • {turn.userMsg.timestamp}
+                          </div>
+                          <div className="text-green-500">{turn.userMsg.text}</div>
                         </div>
-                        <div className="text-green-500">{turn.userMsg.text}</div>
-                      </div>
-                    )}
-                    {turn.agentMsg && (
-                      <div
-                        className={
-                          "p-4 rounded-lg bg-blue-900/20 border border-blue-500"
-                        }
-                      >
-                        <div className="text-xs text-gray-400 mb-1">
-                          Assistant • {turn.agentMsg.timestamp}
+                      )}
+                      {turn.agentMsg && (
+                        <div className={"p-4 rounded-lg bg-blue-900/20 border border-blue-500"}>
+                          <div className="text-xs text-gray-400 mb-1">
+                            Assistant • {turn.agentMsg.timestamp}
+                          </div>
+                          <div className="text-green-500">{turn.agentMsg.text}</div>
                         </div>
-                        <div className="text-green-500">{turn.agentMsg.text}</div>
-                      </div>
-                    )}
-                  </div>
-                ));
-              })()}
-              <div ref={messagesEndRef} />
+                      )}
+                    </div>
+                  ));
+                })()}
+                <div ref={messagesEndRef} />
+              </div>
             </div>
-          </section>
-          <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
+            {/* Secret Network Confidential Column */}
+            <div className="w-1/2 h-full border-l border-cyan-400 bg-black/95 flex flex-col">
+              <div className="p-4 border-b border-cyan-400">
+                <h2 className="text-cyan-400 text-lg font-bold tracking-widest" style={{textShadow: '0 0 8px #00fff7'}}>Secret Network (Confidential)</h2>
+                <p className="text-xs text-cyan-300 mt-1">Your data is encrypted, private, and secure. Only you can access it.</p>
+              </div>
+              <div className="flex flex-col gap-4 p-4 overflow-y-auto flex-1">
+                {(() => {
+                  // Sort messages by timestamp
+                  const sortedHistory = [...conversationHistory].sort((a, b) => {
+                    const dateA = new Date(`1970-01-01T${a.timestamp}`);
+                    const dateB = new Date(`1970-01-01T${b.timestamp}`);
+                    return dateA - dateB;
+                  });
+                  const turns = [];
+                  for (const msg of sortedHistory) {
+                    const lastTurn = turns[turns.length - 1];
+                    if (!lastTurn) {
+                      if (msg.role === "user") {
+                        turns.push({ userMsg: msg, agentMsg: null });
+                      } else {
+                        turns.push({ userMsg: null, agentMsg: msg });
+                      }
+                    } else {
+                      if (
+                        (msg.role === "user" && lastTurn.userMsg && !lastTurn.agentMsg) ||
+                        (msg.role === "assistant" && lastTurn.agentMsg && !lastTurn.userMsg)
+                      ) {
+                        continue;
+                      }
+                      if (msg.role === "user" && !lastTurn.userMsg) {
+                        lastTurn.userMsg = msg;
+                      } else if (msg.role === "assistant" && !lastTurn.agentMsg) {
+                        lastTurn.agentMsg = msg;
+                      } else {
+                        if (msg.role === "user") {
+                          turns.push({ userMsg: msg, agentMsg: null });
+                        } else {
+                          turns.push({ userMsg: null, agentMsg: msg });
+                        }
+                      }
+                    }
+                  }
+                  // Veil effect: blur and cyberpunk style
+                  return turns.map((turn, idx) => (
+                    <div key={idx} className="flex flex-col gap-2">
+                      {turn.userMsg && (
+                        <div className="p-4 rounded-lg border border-cyan-400 bg-cyan-900/10 shadow-cyberpunk relative overflow-hidden">
+                          <div className="text-xs text-cyan-300 mb-1" style={{textShadow: '0 0 4px #00fff7'}}>
+                            You • {turn.userMsg.timestamp}
+                          </div>
+                          <div className="text-cyan-200 blur-sm select-none" style={{filter: 'blur(6px) brightness(1.2)'}}>
+                            {turn.userMsg.text}
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-cyan-400 font-mono text-xs bg-black/80 px-2 py-1 rounded shadow-cyberpunk border border-cyan-400" style={{textShadow: '0 0 8px #00fff7'}}>Confidential</span>
+                          </div>
+                        </div>
+                      )}
+                      {turn.agentMsg && (
+                        <div className="p-4 rounded-lg border border-cyan-400 bg-cyan-900/10 shadow-cyberpunk relative overflow-hidden">
+                          <div className="text-xs text-cyan-300 mb-1" style={{textShadow: '0 0 4px #00fff7'}}>
+                            Assistant • {turn.agentMsg.timestamp}
+                          </div>
+                          <div className="text-cyan-200 blur-sm select-none" style={{filter: 'blur(6px) brightness(1.2)'}}>
+                            {turn.agentMsg.text}
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-cyan-400 font-mono text-xs bg-black/80 px-2 py-1 rounded shadow-cyberpunk border border-cyan-400" style={{textShadow: '0 0 8px #00fff7'}}>Confidential</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ));
+                })()}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+          </div>
+          <section className="h-32 w-full p-4">
             <SessionControls
               startSession={startSession}
               stopSession={stopSession}
